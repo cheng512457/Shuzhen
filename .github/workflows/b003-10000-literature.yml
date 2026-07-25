@@ -1,0 +1,29 @@
+name: Build B003 10000 verified literature records
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: python -m pip install --upgrade requests
+      - name: Discover, validate, de-duplicate and partition 10000 records
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: python scripts/build_b003_10000.py
+      - name: Upload B003 CSV datasets
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B003-10000-verified
+          path: out/
+          retention-days: 14
