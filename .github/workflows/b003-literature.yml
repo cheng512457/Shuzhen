@@ -1,0 +1,377 @@
+name: Build verified B003 500-literature dataset
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade requests
+      - name: Query, validate, and open 500 literature links
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          python - <<'PY'
+          import csv, json, os, re, time, math, html, threading
+          from collections import defaultdict
+          from concurrent.futures import ThreadPoolExecutor, as_completed
+          from difflib import SequenceMatcher
+          from datetime import datetime, timezone
+          from urllib.parse import quote, urlparse
+          import requests
+
+          EXCLUDED_DOIS = set(['10.1002/aic.15609', '10.1002/bbb.1997', '10.1002/bit.25552', '10.1002/bit.26066', '10.1002/btpr.1960', '10.1002/elsc.201700172', '10.1002/ese3.394', '10.1002/fsn3.3746', '10.1002/fsn3.94', '10.1002/j.1536-4801.1997.tb01452.x', '10.1002/jfbc.12571', '10.1002/jfbc.14001', '10.1002/jsfa.10286', '10.1002/jsfa.14308', '10.1002/jsfa.70099', '10.1002/mnfr.201801094', '10.1002/mnfr.202200726', '10.1007/s00253-019-02706-5', '10.1007/s00726-019-02706-5', '10.1007/s43393-026-00454-8', '10.1016/j.cmet.2022.12.002', '10.1016/j.cofs.2022.100973', '10.1016/j.conctc.2024.101424', '10.1016/j.crbiot.2023.100171', '10.1016/j.crfs.2023.100593', '10.1016/j.crfs.2026.101431', '10.1016/j.dche.2023.100087', '10.1016/j.fbio.2024.104084', '10.1016/j.focha.2023.100410', '10.1016/j.fochx.2021.100196', '10.1016/j.foodchem.2013.01.063', '10.1016/j.foodchem.2018.01.047', '10.1016/j.foodchem.2022.134812', '10.1016/j.foodchem.2022.135046', '10.1016/j.foodchem.2023.135387', '10.1016/j.foodchem.2024.140359', '10.1016/j.foodchem.2024.141712', '10.1016/j.foodchem.2024.141840', '10.1016/j.foodchem.2025.146452', '10.1016/j.foodcont.2025.111809', '10.1016/j.foodhyd.2017.02.007', '10.1016/j.foodres.2013.02.040', '10.1016/j.foodres.2015.08.001', '10.1016/j.foodres.2017.02.004', '10.1016/j.foodres.2017.08.037', '10.1016/j.foodres.2023.112786', '10.1016/j.foodres.2023.113120', '10.1016/j.foodres.2024.114831', '10.1016/j.foodres.2024.115190', '10.1016/j.foodres.2025.115689', '10.1016/j.fufo.2026.100999', '10.1016/j.heliyon.2019.e02076', '10.1016/j.heliyon.2021.e06668', '10.1016/j.idairyj.2010.03.007', '10.1016/j.idairyj.2014.12.007', '10.1016/j.ijbiomac.2023.128805', '10.1016/j.ijbiomac.2024.131066', '10.1016/j.ijbiomac.2025.140274', '10.1016/j.ijbiomac.2026.152533', '10.1016/j.jff.2019.103680', '10.1016/j.jff.2019.103697', '10.1016/j.jfoodeng.2013.08.034', '10.1016/j.jfoodeng.2025.112822', '10.1016/j.jfoodeng.2025.112918', '10.1016/j.matbio.2015.09.003', '10.1016/j.pep.2011.04.015', '10.1016/j.pep.2015.11.005', '10.1016/j.tifs.2014.02.004', '10.1016/j.tifs.2025.105491', '10.1016/s0958-6946(02)00127-9', '10.1021/ac4027274', '10.1021/ac7024738', '10.1021/acschembio.5b01051', '10.1021/acschembio.6b00547', '10.1021/acsomega.9b02002', '10.1021/acssynbio.4c00624', '10.1021/acssynbio.5c00154', '10.1021/acs.jafc.1c04555', '10.1021/acs.jafc.1c06028', '10.1021/acs.jafc.2c01246', '10.1021/acs.jafc.2c02487', '10.1021/acs.jafc.3c05331', '10.1021/acs.jafc.3c06700', '10.1021/acs.jafc.4c02948', '10.1021/acs.jafc.4c05650', '10.1021/acs.jafc.5b02189', '10.1021/acs.jafc.5c03037', '10.1021/acs.jafc.7b03801', '10.1021/acs.jafc.8b00679', '10.1021/acs.jafc.9b06618', '10.1021/acs.jafc.9b08297', '10.1021/acs.jproteome.5c00903', '10.1021/acs.jproteome.8b00004', '10.1021/acs.jproteome.8b00604', '10.1021/ie400039m', '10.1021/ja00090a008', '10.1021/ja027477q', '10.1021/ja205630g', '10.1021/jf050206p', '10.1021/jf0703248', '10.1021/jf503664y', '10.1021/jf801580s', '10.1021/jf8034258', '10.1021/pr400212z', '10.1038/nbt.2999', '10.1038/nmeth.2182', '10.1038/s41586-023-06415-8', '10.1038/s41586-025-09747-9', '10.1038/s41587-022-01618-2', '10.1038/s41591-020-0934-0', '10.1038/s41596-018-0119-1', '10.1038/s41598-018-21021-9', '10.1038/s41598-022-13617-z', '10.1038/s41467-020-18071-x', '10.1038/s42004-023-01029-7', '10.1046/j.1365-2362.1997.970645.x', '10.1073/pnas.0910040106', '10.1073/pnas.2016239118', '10.1074/mcp.o115.056671', '10.1080/08037050902761209', '10.1080/09637486.2018.1446916', '10.1093/bioinformatics/btac020', '10.1093/bioinformatics/btac323', '10.1093/jaoac/91.4.965', '10.1093/nar/gkt953', '10.1109/tpami.2021.3095381', '10.1111/1541-4337.12326', '10.1111/1541-4337.12455', '10.1111/1541-4337.12707', '10.1111/1750-3841.14117', '10.1111/1750-3841.17672', '10.1111/1750-3841.70258', '10.1111/ijfs.14055', '10.1111/ijfs.14291', '10.1111/ijfs.14441', '10.1111/jfbc.12482', '10.1111/jfbc.13440', '10.1111/jtxs.12611', '10.1111/j.1750-3841.2011.02455.x', '10.1126/science.1233606', '10.1126/science.1255784', '10.1126/science.add2187', '10.1126/science.ade2574', '10.1146/annurev-nutr-061021-025153', '10.1161/hypertensionaha.107.098988', '10.1186/s12896-020-00612-3', '10.1186/s13102-026-01846-y', '10.1271/bbb.65.1353', '10.1371/journal.pcbi.1013602', '10.1371/journal.pone.0144231', '10.31989/ffhd.v2i10.80', '10.3390/app12147204', '10.3390/bioengineering10080926', '10.3390/bioengineering12121298', '10.3390/foods11121812', '10.3390/foods12102005', '10.3390/foods13223550', '10.3390/foods14071180', '10.3390/ijms20235978', '10.3390/jcm14113655', '10.3390/molecules23071591', '10.3390/molecules25194479', '10.3390/molecules30071451', '10.3390/nu10010097', '10.3390/nu12010219', '10.3390/nu12102998', '10.3390/nu13020523', '10.3390/nu16172975', '10.3390/pr9101734', '10.3390/s22010115', '10.3389/fgene.2021.768979', '10.3389/fmicb.2018.02354', '10.3389/fmicb.2019.01954', '10.3389/fmicb.2023.1153135', '10.3389/fnut.2025.1644899', '10.3945/ajcn.112.055202', '10.4028/www.scientific.net/amr.881-883.331', '10.7506/spkx1002-6630-20220927-286'])
+          QUERIES = {'G1': ['food protein peptidomics processing digestion', 'milk protein peptide processing mass spectrometry', 'food protein structure digestibility proteomics', 'bioactive peptide database food protein', 'targeted peptide quantification food', 'thermal processing milk peptide marker'], 'G2': ['food-derived bioactive peptide machine learning', 'ACE inhibitory peptide deep learning', 'taste peptide machine learning', 'bioactive peptide prediction artificial intelligence', 'generative peptide design protein language model', 'peptide binder design protein language model'], 'G3': ['food protein hydrolysis peptide release kinetics', 'enzymatic hydrolysis bioactive peptides food protein', 'peptidomics gastrointestinal digestion food protein', 'processing pretreatment peptide release food protein', 'sequential hydrolysis target peptide', 'food protein peptide formation degradation kinetics'], 'G4': ['protease specificity profiling mass spectrometry', 'protease engineering directed evolution', 'protease substrate specificity peptide library', 'food protease engineering', 'de novo protease design', 'protease cleavage site profiling'], 'G5': ['recombinant bioactive peptide expression', 'food-grade bacteria bioactive peptide production', 'tandem repeat peptide expression', 'SUMO fusion peptide expression', 'Lactococcus lactis peptide expression', 'recombinant food-derived peptide production'], 'G6': ['food-derived peptide bioavailability human plasma', 'bioactive peptide intestinal transport Caco-2', 'collagen peptide human blood oral ingestion', 'food peptide digestion absorption', 'dynamic gastrointestinal digestion peptide', 'food-derived peptide tissue distribution'], 'G7': ['food-derived peptide direct target', 'osteogenic peptide collagen', 'bone health bioactive peptide', 'peptide target identification DARTS CETSA', 'calcium-binding peptide collagen', 'antihypertensive peptide molecular mechanism'], 'G8': ['bioactive peptide food matrix stability', 'bioactive peptide encapsulation food', 'dysphagia food protein gel', '3D printing dysphagia protein', 'food protein peptide interaction matrix', 'high protein gel elderly food'], 'G9': ['food processing digital twin', 'enzymatic hydrolysis online monitoring', 'food process soft sensor', 'food process model predictive control', 'near infrared protein hydrolysis', 'bioprocess digital twin food'], 'G10': ['collagen peptide randomized controlled trial', 'milk peptide blood pressure randomized', 'casein peptide human trial', 'precision nutrition dietary intervention', 'food-derived peptide clinical trial', 'bone health protein peptide randomized']}
+          REQUIRED = {'G1': ['peptid', 'proteom', 'digest', 'processing', 'protein', 'database'], 'G2': ['peptid', 'machine learning', 'deep learning', 'artificial intelligence', 'language model', 'generative'], 'G3': ['hydrolys', 'peptid', 'digest', 'kinetic', 'protease', 'enzym'], 'G4': ['protease', 'peptidase', 'specificity', 'directed evolution', 'substrate profiling', 'enzyme design'], 'G5': ['recombinant', 'expression', 'food-grade', 'lactococcus', 'fusion', 'tandem'], 'G6': ['bioavailability', 'absorption', 'transport', 'plasma', 'digestion', 'intestinal'], 'G7': ['osteogenic', 'bone', 'target', 'binding', 'calcium-binding', 'mechanism'], 'G8': ['matrix', 'stability', 'encapsulation', 'gel', 'dysphagia', '3d print'], 'G9': ['digital twin', 'online monitoring', 'soft sensor', 'process control', 'near infrared', 'model predictive'], 'G10': ['randomized', 'clinical trial', 'human', 'precision nutrition', 'intervention', 'placebo']}
+          DIRECT_FOOD_TERMS = ['food', 'milk', 'casein', 'whey', 'dairy', 'collagen', 'gelatin', 'fish', 'marine', 'soy', 'pea', 'rice', 'wheat', 'oat', 'egg', 'meat', 'chicken', 'bovine', 'porcine', 'protein hydrolysate', 'fermented', 'kefir', 'nutritional', 'edible', 'diet', 'dietary', 'food-derived', 'food derived', 'bioactive peptide', 'functional food']
+          EXCLUDE_TERMS = ['cancer vaccine', 'tumor peptide', 'anticancer peptide', 'cell penetrating peptide', 'venom peptide', 'hiv peptide', 'sars-cov', 'covid-19 peptide', 'amyloid beta', 'alzheimer', 'parkinson', 'opioid drug', 'peptide drug delivery', 'radioimmunotherapy', 'epitope vaccine', 'malaria vaccine']
+          UNIT_RULES = {'G1': [('1C', ['database', 'benchmark', 'dataset', 'evidence', 'annotation']), ('1B', ['peptidomics', 'mass spectrometry', 'digestion', 'cleavage', 'processing']), ('1A', ['proteomics', 'structure', 'batch', 'fingerprint'])], 'G2': [('2B', ['generative', 'design', 'language model', 'diffusion', 'inverse folding']), ('2C', ['active learning', 'target', 'knowledge graph', 'transfer learning']), ('2A', ['prediction', 'classification', 'machine learning', 'deep learning'])], 'G3': [('3B', ['kinetic', 'time-resolved', 'formation', 'degradation', 'reaction network']), ('3A', ['pretreatment', 'heat', 'ultrasound', 'pressure', 'accessibility']), ('3C', ['scale', 'multi-enzyme', 'sequential', 'process optimization'])], 'G4': [('4C', ['de novo', 'generative', 'enzyme design']), ('4B', ['directed evolution', 'engineering', 'mutation', 'redesign']), ('4A', ['specificity', 'profiling', 'substrate', 'cleavage site'])], 'G5': [('5A', ['tandem', 'fusion', 'linker', 'precursor', 'sumo']), ('5B', ['food-grade', 'lactococcus', 'bacillus', 'yeast', 'fermentation']), ('5C', ['cleavage', 'purification', 'equivalence', 'release'])], 'G6': [('6C', ['plasma', 'blood', 'tissue', 'human', 'bioavailability']), ('6B', ['caco', 'transport', 'intestinal', 'epithelial', 'pept1']), ('6A', ['digestion', 'dynamic', 'gastric', 'gastrointestinal'])], 'G7': [('7B', ['binding site', 'conformation', 'structure', 'docking', 'affinity']), ('7C', ['knockout', 'knockdown', 'dose-response', 'causal', 'rescue']), ('7A', ['target identification', 'osteogenic', 'bone', 'joint'])], 'G8': [('8B', ['dysphagia', '3d print', 'gel', 'elderly', 'swallow']), ('8C', ['matrix', 'encapsulation', 'sensory', 'stability', 'delivery']), ('8A', ['high protein', 'rheology', 'emulsion', 'interface'])], 'G9': [('9A', ['online', 'near infrared', 'raman', 'soft sensor', 'monitoring']), ('9C', ['control', 'scale-up', 'economic', 'model predictive']), ('9B', ['digital twin', 'hybrid model', 'mechanistic model'])], 'G10': [('10C', ['randomized', 'clinical trial', 'placebo', 'intervention']), ('10A', ['heterogeneity', 'phenotype', 'response variability']), ('10B', ['stratification', 'prediction model', 'personalized', 'precision nutrition'])]}
+
+          UA = "Shuzhen-food-protein-peptide-literature-database/1.0"
+          session = requests.Session()
+          session.headers.update({"User-Agent": UA, "Accept": "application/json,text/html;q=0.9,*/*;q=0.8"})
+          lock = threading.Lock()
+
+          def norm_text(s):
+              s = html.unescape(s or "").lower()
+              s = re.sub(r"<[^>]+>", " ", s)
+              s = re.sub(r"[^a-z0-9]+", " ", s)
+              return " ".join(s.split())
+
+          def clean_doi(s):
+              if not s:
+                  return ""
+              s = s.strip().lower()
+              s = re.sub(r"^https?://(dx\.)?doi\.org/", "", s)
+              s = re.sub(r"^doi:\s*", "", s)
+              return s.strip().rstrip(".,;)")
+
+          def title_sim(a,b):
+              return SequenceMatcher(None, norm_text(a), norm_text(b)).ratio()
+
+          def abstract_text(inv):
+              if not inv:
+                  return ""
+              pairs=[]
+              for word, positions in inv.items():
+                  for p in positions:
+                      pairs.append((p,word))
+              pairs.sort()
+              return " ".join(w for _,w in pairs)
+
+          def get_json(url, params=None, attempts=5, pause=1.5):
+              for i in range(attempts):
+                  try:
+                      r = session.get(url, params=params, timeout=40)
+                      if r.status_code == 200:
+                          return r.json()
+                      if r.status_code in (429,500,502,503,504):
+                          time.sleep(pause*(i+1))
+                          continue
+                      return None
+                  except Exception:
+                      time.sleep(pause*(i+1))
+              return None
+
+          def search_openalex(query):
+              params = {
+                  "search": query,
+                  "filter": "has_doi:true,from_publication_date:2000-01-01",
+                  "per-page": 200,
+                  "mailto": "research@example.com"
+              }
+              data = get_json("https://api.openalex.org/works", params=params)
+              if not data:
+                  return []
+              return data.get("results", [])
+
+          def candidate_score(group, work, query):
+              title = work.get("title") or ""
+              abstract = abstract_text(work.get("abstract_inverted_index"))
+              text = norm_text(title + " " + abstract)
+              if not text:
+                  return -999
+              if any(x in text for x in EXCLUDE_TERMS):
+                  return -999
+              score = 0.0
+              req_hits = sum(1 for t in REQUIRED[group] if t in text)
+              score += req_hits * 2.4
+              food_hits = sum(1 for t in DIRECT_FOOD_TERMS if t in text)
+              score += min(food_hits,4) * 1.6
+              qterms = [t for t in norm_text(query).split() if len(t)>4]
+              score += min(sum(1 for t in qterms if t in text),6) * 0.45
+              if group in ("G4","G9") and req_hits >= 2:
+                  score += 2.0
+              if group in ("G2","G7") and "peptid" in text:
+                  score += 1.4
+              if group == "G10" and any(x in text for x in ["randomized","placebo","clinical trial","human"]):
+                  score += 3.0
+              if group == "G6" and any(x in text for x in ["human","plasma","blood","caco","intestinal"]):
+                  score += 2.0
+              cited = work.get("cited_by_count") or 0
+              score += min(math.log1p(cited),5) * 0.35
+              year = work.get("publication_year") or 0
+              if year >= 2020:
+                  score += 0.6
+              elif year < 2005:
+                  score -= 0.4
+              return round(score,3)
+
+          def assign_unit(group, text):
+              t=norm_text(text)
+              for unit, kws in UNIT_RULES[group]:
+                  if any(k in t for k in kws):
+                      return unit
+              return {
+                  "G1":"1B","G2":"2A","G3":"3B","G4":"4A","G5":"5B",
+                  "G6":"6A","G7":"7A","G8":"8C","G9":"9B","G10":"10C"
+              }[group]
+
+          def crossref_validate(candidate):
+              doi = candidate["doi"]
+              url = "https://api.crossref.org/works/" + quote(doi, safe="")
+              data = get_json(url, attempts=5, pause=2.0)
+              if not data or data.get("status") != "ok":
+                  return None
+              msg = data.get("message") or {}
+              cr_doi = clean_doi(msg.get("DOI"))
+              if cr_doi != doi:
+                  return None
+              cr_title = ((msg.get("title") or [""])[0] or "").strip()
+              sim = title_sim(candidate["title"], cr_title)
+              if sim < 0.82:
+                  return None
+              authors = msg.get("author") or []
+              first_author = ""
+              if authors:
+                  first_author = (authors[0].get("family") or authors[0].get("name") or "").strip()
+              issued = (msg.get("published-print") or msg.get("published-online") or msg.get("issued") or {}).get("date-parts") or []
+              year = candidate.get("year") or ""
+              if issued and issued[0]:
+                  year = issued[0][0]
+              container = ((msg.get("container-title") or [""])[0] or "").strip()
+              return {
+                  "crossref_title": cr_title,
+                  "title_similarity": round(sim,4),
+                  "first_author": first_author or candidate.get("first_author") or "Author",
+                  "year": year,
+                  "journal": container or candidate.get("journal") or "",
+                  "crossref_type": msg.get("type") or "",
+              }
+
+          def open_link(url):
+              try:
+                  r = session.get(
+                      url, timeout=35, allow_redirects=True, stream=True,
+                      headers={"User-Agent":"Mozilla/5.0 (compatible; academic literature verification/1.0)"}
+                  )
+                  try:
+                      next(r.iter_content(chunk_size=2048), b"")
+                  except Exception:
+                      pass
+                  status = r.status_code
+                  final = r.url
+                  ctype = r.headers.get("content-type","")
+                  r.close()
+                  ok = status not in (404,410) and status < 500 and bool(final)
+                  return ok, status, final, ctype, ""
+              except Exception as e:
+                  return False, 0, "", "", str(e)[:240]
+
+          pools = defaultdict(dict)
+          for group, qlist in QUERIES.items():
+              print("DISCOVERY", group, flush=True)
+              for q in qlist:
+                  works = search_openalex(q)
+                  print(" ", q, len(works), flush=True)
+                  for w in works:
+                      doi = clean_doi(w.get("doi"))
+                      if not doi or doi in EXCLUDED_DOIS:
+                          continue
+                      title = (w.get("title") or "").strip()
+                      if not title:
+                          continue
+                      score = candidate_score(group,w,q)
+                      if score < 3.2:
+                          continue
+                      primary = w.get("primary_location") or {}
+                      source = primary.get("source") or {}
+                      authorships = w.get("authorships") or []
+                      fa = ""
+                      if authorships:
+                          fa = ((authorships[0].get("author") or {}).get("display_name") or "").split()[-1]
+                      item = {
+                          "group":group,"query":q,"doi":doi,"title":title,
+                          "year":w.get("publication_year") or "",
+                          "publication_date":w.get("publication_date") or "",
+                          "first_author":fa or "Author",
+                          "journal":source.get("display_name") or "",
+                          "openalex_id":w.get("id") or "",
+                          "type":w.get("type") or "",
+                          "cited_by_count":w.get("cited_by_count") or 0,
+                          "is_oa":bool((w.get("open_access") or {}).get("is_oa")),
+                          "oa_status":(w.get("open_access") or {}).get("oa_status") or "",
+                          "oa_pdf_url":((w.get("best_oa_location") or {}).get("pdf_url") or ""),
+                          "landing_page_url":primary.get("landing_page_url") or "",
+                          "score":score,
+                          "abstract":abstract_text(w.get("abstract_inverted_index")),
+                      }
+                      prev=pools[group].get(doi)
+                      if prev is None or item["score"]>prev["score"]:
+                          pools[group][doi]=item
+                  time.sleep(0.12)
+
+          best_group={}
+          for group, d in pools.items():
+              for doi,c in d.items():
+                  if doi not in best_group or c["score"] > best_group[doi]["score"]:
+                      best_group[doi]=c
+          pools2=defaultdict(list)
+          for doi,c in best_group.items():
+              pools2[c["group"]].append(c)
+          for g in pools2:
+              pools2[g].sort(key=lambda x:(x["score"],x["cited_by_count"],x["year"]), reverse=True)
+              print("POOL",g,len(pools2[g]),"top",pools2[g][:1],flush=True)
+
+          def verify(candidate):
+              cr = crossref_validate(candidate)
+              if not cr:
+                  return None
+              ok,status,final,ctype,err = open_link("https://doi.org/"+candidate["doi"])
+              used = "https://doi.org/"+candidate["doi"]
+              if not ok and candidate.get("landing_page_url"):
+                  ok,status,final,ctype,err = open_link(candidate["landing_page_url"])
+                  used = candidate["landing_page_url"]
+              if not ok:
+                  return None
+              out=dict(candidate)
+              out.update(cr)
+              out.update({
+                  "opened_input_url":used,
+                  "opened_http_status":status,
+                  "opened_final_url":final,
+                  "opened_content_type":ctype,
+                  "opened_at":datetime.now(timezone.utc).isoformat(),
+                  "link_error":err,
+              })
+              text=out["title"]+" "+out.get("abstract","")
+              out["unit"]=assign_unit(out["group"],text)
+              direct = any(t in norm_text(text) for t in DIRECT_FOOD_TERMS)
+              out["relevance"]="A" if direct and out["group"] not in ("G4","G9") else "B"
+              if out["group"] in ("G4","G9") and direct:
+                  out["relevance"]="A"
+              out["priority"]="P0" if out["score"]>=8.0 else ("P1" if out["score"]>=5.5 else "P2")
+              return out
+
+          selected=[]
+          used_dois=set()
+          for group in [f"G{i}" for i in range(1,11)]:
+              accepted=[]
+              candidates=pools2.get(group,[])[:160]
+              print("VERIFY",group,"candidates",len(candidates),flush=True)
+              with ThreadPoolExecutor(max_workers=8) as ex:
+                  futures={ex.submit(verify,c):c for c in candidates}
+                  for fut in as_completed(futures):
+                      v=fut.result()
+                      if v and v["doi"] not in used_dois:
+                          accepted.append(v)
+              accepted.sort(key=lambda x:(x["score"],x["cited_by_count"],x["year"]),reverse=True)
+              accepted=accepted[:50]
+              if len(accepted)<50:
+                  print("FAILED_GROUP",group,len(accepted),flush=True)
+              for v in accepted:
+                  used_dois.add(v["doi"])
+              selected.extend(accepted)
+              print("ACCEPTED",group,len(accepted),flush=True)
+
+          counts=defaultdict(int)
+          for x in selected:
+              counts[x["group"]]+=1
+          for group in [f"G{i}" for i in range(1,11)]:
+              need=50-counts[group]
+              if need<=0:
+                  continue
+              already={x["doi"] for x in selected}
+              for c in pools2.get(group,[])[160:]:
+                  if need<=0:
+                      break
+                  if c["doi"] in already or c["doi"] in used_dois:
+                      continue
+                  v=verify(c)
+                  if v:
+                      selected.append(v); used_dois.add(v["doi"]); already.add(v["doi"]); need-=1
+              counts[group]=50-need
+
+          if len(selected)!=500 or any(counts[g]!=50 for g in [f"G{i}" for i in range(1,11)]):
+              print("FINAL_COUNTS",dict(counts), "TOTAL",len(selected),flush=True)
+              failure=True
+          else:
+              failure=False
+
+          selected.sort(key=lambda x:(int(x["group"][1:]),-x["score"],-x["cited_by_count"],str(x["year"])))
+          headers=[
+              "B003_ID","主课题群","研究单元","下载优先级","相关性等级","第一作者","年份","论文题目",
+              "期刊","DOI","PDF文件命名","文献类型","被引次数","是否开放获取","OA_PDF链接","OpenAlex_ID",
+              "发现检索式","相关性评分","Crossref题名","题名一致度","元数据核验","链接HTTP状态",
+              "链接打开时间","已打开验证链接"
+          ]
+          rows=[]
+          for i,x in enumerate(selected,1):
+              bid=f"B003-{i:03d}"
+              author=re.sub(r"[^A-Za-z0-9-]+","",x.get("first_author") or "Author") or "Author"
+              year=x.get("year") or "Year"
+              tail=re.sub(r"[^A-Za-z0-9]","",x["doi"])[-4:]
+              pdf=f"{bid}_{author}_{year}_{tail}.pdf"
+              rows.append({
+                  "B003_ID":bid,"主课题群":x["group"],"研究单元":x["unit"],
+                  "下载优先级":x["priority"],"相关性等级":x["relevance"],
+                  "第一作者":x.get("first_author",""),"年份":year,"论文题目":x["title"],
+                  "期刊":x.get("journal",""),"DOI":x["doi"],"PDF文件命名":pdf,
+                  "文献类型":x.get("crossref_type") or x.get("type",""),
+                  "被引次数":x.get("cited_by_count",0),"是否开放获取":"是" if x.get("is_oa") else "否",
+                  "OA_PDF链接":x.get("oa_pdf_url",""),"OpenAlex_ID":x.get("openalex_id",""),
+                  "发现检索式":x.get("query",""),"相关性评分":x.get("score",0),
+                  "Crossref题名":x.get("crossref_title",""),"题名一致度":x.get("title_similarity",0),
+                  "元数据核验":"Crossref DOI及题名一致",
+                  "链接HTTP状态":x.get("opened_http_status",0),
+                  "链接打开时间":x.get("opened_at",""),
+                  "已打开验证链接":x.get("opened_final_url",""),
+              })
+
+          os.makedirs("out",exist_ok=True)
+          with open("out/B003_500_verified.csv","w",encoding="utf-8-sig",newline="") as f:
+              w=csv.DictWriter(f,fieldnames=headers)
+              w.writeheader(); w.writerows(rows)
+          with open("out/B003_500_verified.json","w",encoding="utf-8") as f:
+              json.dump(rows,f,ensure_ascii=False,indent=2)
+          summary={
+              "total":len(rows),
+              "counts_by_group":dict(counts),
+              "excluded_existing_dois":len(EXCLUDED_DOIS),
+              "unique_dois":len({r["DOI"] for r in rows}),
+              "all_links_opened":all(bool(r["已打开验证链接"]) for r in rows),
+              "generated_at":datetime.now(timezone.utc).isoformat(),
+              "failure":failure
+          }
+          with open("out/run_summary.json","w",encoding="utf-8") as f:
+              json.dump(summary,f,ensure_ascii=False,indent=2)
+          print(json.dumps(summary,ensure_ascii=False),flush=True)
+          if failure:
+              raise SystemExit(2)
+          PY
+      - name: Upload verified dataset
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B003-verified-500
+          path: out/
+          retention-days: 7
