@@ -1,0 +1,111 @@
+name: B004 S2.3 citation author and related-work expansion
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/run-b004-s2-3-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  prepare:
+    name: Prepare S2.3 seeds
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download S2.1 final artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-S2-1-OpenAlex-final
+          path: prior_artifacts/s2_1
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30193056524
+      - name: Download S2.2 final artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-S2-2-health-evidence-final
+          path: prior_artifacts/s2_2
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30194551317
+      - name: Build balanced seed shards and known DOI registry
+        run: python scripts/b004_s2_3_prepare.py
+      - name: Upload S2.3 seed package
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-S2-3-seeds
+          path: out/
+          retention-days: 14
+
+  expand:
+    name: Expand shard ${{ matrix.shard }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: python -m pip install --upgrade requests
+      - name: Download S2.3 seeds
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-S2-3-seeds
+          path: seed_artifact
+      - name: Expand citation, related-work and core-author network
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: python scripts/b004_s2_3_expand.py
+      - name: Upload shard checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-S2-3-shard${{ matrix.shard }}
+          path: out/
+          retention-days: 14
+
+  combine:
+    name: Combine S2.3 expansion
+    needs: expand
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download expansion shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: B004-S2-3-shard*
+          path: shard_artifacts
+          merge-multiple: false
+      - name: Merge and apply S2.3 quality gate
+        run: python scripts/b004_s2_3_combine.py
+      - name: Upload S2.3 complete result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-S2-3-network-expansion-final
+          path: out/
+          retention-days: 14
+      - name: Upload small S2.3 report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-S2-3-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+          retention-days: 14
