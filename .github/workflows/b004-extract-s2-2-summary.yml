@@ -10,7 +10,7 @@ on:
 
 permissions:
   actions: read
-  contents: read
+  contents: write
 
 jobs:
   extract:
@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - name: Download completed S2.2 artifact
         uses: actions/download-artifact@v4
         with:
@@ -28,13 +30,22 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Extract and print summary
         run: |
-          mkdir -p summary_out
+          mkdir -p summary_out results/B004_S2_2
           find downloaded -name run_summary.json -exec cp {} summary_out/run_summary.json \;
           find downloaded -name stage_report.md -exec cp {} summary_out/stage_report.md \;
+          cp summary_out/run_summary.json results/B004_S2_2/run_summary.json
+          cp summary_out/stage_report.md results/B004_S2_2/stage_report.md
           echo '---RUN_SUMMARY---'
           cat summary_out/run_summary.json
           echo '---STAGE_REPORT---'
           cat summary_out/stage_report.md
+      - name: Commit summary to branch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add results/B004_S2_2/run_summary.json results/B004_S2_2/stage_report.md
+          git diff --cached --quiet || git commit -m 'Store B004 S2.2 summary metrics'
+          git push origin HEAD:${{ github.head_ref }}
       - name: Upload summary only
         uses: actions/upload-artifact@v4
         with:
