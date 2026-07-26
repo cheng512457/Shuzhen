@@ -1,0 +1,43 @@
+name: B004 extract S2.2 summary
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/extract-b004-s2-2-summary.txt'
+      - '.github/workflows/b004-extract-s2-2-summary.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download completed S2.2 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-S2-2-health-evidence-final
+          path: downloaded
+          repository: cheng512457/Shuzhen
+          run-id: 30194551317
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract and print summary
+        run: |
+          mkdir -p summary_out
+          find downloaded -name run_summary.json -exec cp {} summary_out/run_summary.json \;
+          find downloaded -name stage_report.md -exec cp {} summary_out/stage_report.md \;
+          echo '---RUN_SUMMARY---'
+          cat summary_out/run_summary.json
+          echo '---STAGE_REPORT---'
+          cat summary_out/stage_report.md
+      - name: Upload summary only
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-S2-2-summary-only
+          path: summary_out/
+          retention-days: 14
