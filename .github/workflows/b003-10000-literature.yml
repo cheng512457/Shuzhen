@@ -19,7 +19,7 @@ jobs:
       - name: Discover, validate, de-duplicate and partition 10000 records
         env:
           PYTHONUNBUFFERED: "1"
-        run: python scripts/build_b003_10000.py
+        run: python scripts/build_b003_10000_v3.py
       - name: Upload B003 CSV datasets
         if: always()
         uses: actions/upload-artifact@v4
