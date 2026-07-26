@@ -1,0 +1,61 @@
+name: Build B003 10000 literature matrix
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  discover:
+    name: Discover ${{ matrix.group }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 85
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [G1, G2, G3, G4, G5, G6, G7, G8, G9, G10]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: python -m pip install --upgrade requests
+      - name: Discover and validate group
+        env:
+          GROUP: ${{ matrix.group }}
+        run: python scripts/build_b003_group_matrix.py
+      - name: Upload group result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B003-group-${{ matrix.group }}
+          path: out/
+          retention-days: 14
+
+  combine:
+    name: Combine 10000 records
+    needs: discover
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download group artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: B003-group-*
+          path: group_artifacts
+          merge-multiple: false
+      - name: Combine, dynamically refill, and split for ten students
+        run: python scripts/combine_b003_matrix.py
+      - name: Upload combined result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B003-10000-matrix-final
+          path: out/
+          retention-days: 14
