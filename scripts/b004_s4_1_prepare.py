@@ -17,12 +17,15 @@ if not files:
     raise RuntimeError('Missing S3.2 formal download pool')
 source = files[0]
 
-# Scale the 100,000-record ontology plan to a balanced 10,000-record first round.
+# Scale the ontology plan to exactly 10,000 records. The previous configuration
+# summed to 10,050 and stopped before selection; K16 is corrected from 350 to 300.
 QUOTAS = {
     'K01':700,'K02':600,'K03':1000,'K04':700,'K05':1000,'K06':1100,'K07':700,'K08':750,
-    'K09':450,'K10':450,'K11':550,'K12':450,'K13':500,'K14':500,'K15':250,'K16':350,
+    'K09':450,'K10':450,'K11':550,'K12':450,'K13':500,'K14':500,'K15':250,'K16':300,
 }
-assert sum(QUOTAS.values()) == 10000
+quota_total = sum(QUOTAS.values())
+if quota_total != 10000:
+    raise RuntimeError(f'K-domain quotas must sum to 10000, got {quota_total}')
 
 rows_by_k = defaultdict(list)
 with source.open('r', encoding='utf-8-sig', newline='') as f:
@@ -73,8 +76,10 @@ if len(selected) < 10000:
         if row['doi'] in used: continue
         used.add(row['doi']); selected.append(row)
 
-if len(selected) < 10000:
-    raise RuntimeError(f'Only {len(selected)} formal records available after refill')
+if len(selected) != 10000:
+    raise RuntimeError(f'Expected exactly 10000 selected records, got {len(selected)}')
+if len({r['doi'] for r in selected}) != 10000:
+    raise RuntimeError('Selected records contain duplicate DOI values')
 
 # Preserve topical grouping for permanent IDs, then distribute round-robin within each K domain to balance students.
 selected.sort(key=lambda r: (r.get('K_primary') or 'K99', rank_key(r)))
@@ -92,7 +97,6 @@ for row in selected:
 student_cursor = 0
 for k in [f'K{i:02d}' for i in range(1,17)]:
     for row in by_k_selected[k]:
-        # Fill least-loaded bucket; rotate tie-breaking to prevent early-domain bias.
         min_size = min(len(x) for x in student_buckets)
         choices = [i for i,b in enumerate(student_buckets) if len(b) == min_size]
         pick = choices[student_cursor % len(choices)]
@@ -100,7 +104,6 @@ for k in [f'K{i:02d}' for i in range(1,17)]:
         row['student'] = f'Student{pick+1:02d}'
         student_buckets[pick].append(row)
 
-# A final deterministic rebalance is unnecessary when total=10,000 and least-loaded assignment is used.
 counts = [len(x) for x in student_buckets]
 if counts != [1000]*10:
     raise RuntimeError(f'Unexpected student counts: {counts}')
