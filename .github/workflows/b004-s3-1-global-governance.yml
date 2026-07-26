@@ -48,7 +48,7 @@ jobs:
           repository: ${{ github.repository }}
           run-id: 30196709844
       - name: Run DOI normalization version merging and metadata governance
-        run: python scripts/b004_s3_1_global_governance_v2.py
+        run: python scripts/b004_s3_1_global_governance_v3.py
       - name: Build pull request report
         if: always() && github.event_name == 'pull_request'
         run: |
