@@ -1,8 +1,6 @@
 name: B004 S2.2 PubMed Europe PMC supplementation
 
 on:
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 permissions:
