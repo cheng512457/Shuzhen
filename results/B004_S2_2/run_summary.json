@@ -1,0 +1,47 @@
+{
+  "stage": "S2.2",
+  "sources": [
+    "PubMed",
+    "EuropePMC"
+  ],
+  "status": "success",
+  "shard_csv_files_found": 16,
+  "shard_summary_files_found": 16,
+  "raw_occurrences": 604532,
+  "source_unique_records": 406371,
+  "records_with_doi": 392063,
+  "records_without_doi": 14308,
+  "global_unique_dois": 377216,
+  "source_counts": {
+    "EuropePMC": 180462,
+    "PubMed": 225909
+  },
+  "topic_source_counts": {
+    "T01": 77015,
+    "T02": 54748,
+    "T03": 51460,
+    "T04": 28292,
+    "T05": 62654,
+    "T06": 42095,
+    "T07": 42105,
+    "T08": 48002
+  },
+  "topic_unique_doi_counts": {
+    "T01": 72752,
+    "T02": 51398,
+    "T03": 48716,
+    "T04": 26780,
+    "T05": 59366,
+    "T06": 40765,
+    "T08": 45397,
+    "T07": 39727
+  },
+  "missing_topics": [],
+  "small_topics": {},
+  "success_gate": {
+    "raw_occurrences_min": 100000,
+    "global_unique_dois_min": 30000,
+    "each_topic_unique_dois_min": 500
+  },
+  "next_stage": "S2.3 citation network, similar-abstract and core-author expansion"
+}
