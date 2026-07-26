@@ -1,0 +1,1 @@
+Trigger B004 S2.3 citation network, related-work and core-author expansion after successful S2.2 completion.
