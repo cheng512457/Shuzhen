@@ -1,0 +1,1 @@
+Start B004 R02 with 30,000 non-overlapping DOI records, 30 independent 1,000-record link-audit shards, permanent IDs B004-010001 through B004-040000, and ten student outputs of 3,000 records each.
