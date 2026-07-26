@@ -60,7 +60,7 @@ jobs:
       - name: Assign K01-K16 relevance and download priority
         env:
           SHARD: ${{ matrix.shard }}
-        run: python scripts/b004_s3_2_classify.py
+        run: python scripts/b004_s3_2_classify_v2.py
       - name: Upload classified shard checkpoint
         if: always()
         uses: actions/upload-artifact@v4
@@ -97,7 +97,7 @@ jobs:
           else:
               d=json.loads(p.read_text(encoding='utf-8'))
               body='\n'.join([
-                  '## B004 S3.2 automated report','',
+                  '## B004 S3.2 retry automated report','',
                   f"- Status: **{d.get('status','unknown')}**",
                   f"- Classified rows: {d.get('classified_rows','')}",
                   f"- Formal download pool: {d.get('formal_download_pool','')}",
