@@ -1,0 +1,110 @@
+name: B004 S3.1 global DOI governance
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/run-b004-s3-1-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  govern:
+    name: Normalize merge and de-duplicate S2.1-S2.3
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download S2.1 final artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-S2-1-OpenAlex-final
+          path: prior_artifacts/s2_1
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30193056524
+      - name: Download S2.2 final artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-S2-2-health-evidence-final
+          path: prior_artifacts/s2_2
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30194551317
+      - name: Download S2.3 final artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-S2-3-network-expansion-final
+          path: prior_artifacts/s2_3
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30196709844
+      - name: Run DOI normalization version merging and metadata governance
+        run: python scripts/b004_s3_1_global_governance_v2.py
+      - name: Build pull request report
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('out/run_summary.json')
+          if not p.exists():
+              Path('out/pr_comment.md').write_text('S3.1 did not produce run_summary.json. Inspect workflow logs and checkpoints.',encoding='utf-8')
+          else:
+              d=json.loads(p.read_text(encoding='utf-8'))
+              prior=d.get('prior_stage_summaries',{}).get('S2.3',{})
+              lines=[
+                  '## B004 S2.3 and S3.1 automated report','',
+                  '### S2.3 network expansion',
+                  f"- Status: **{prior.get('status','unknown')}**",
+                  f"- Seeds input: {prior.get('seeds_input','')} ",
+                  f"- Seeds resolved: {prior.get('seeds_resolved','')} ",
+                  f"- Candidate OpenAlex IDs: {prior.get('candidate_openalex_ids','')} ",
+                  f"- Candidate records fetched: {prior.get('candidate_ids_fetched','')} ",
+                  f"- Raw expansion rows: {prior.get('raw_expansion_rows','')} ",
+                  f"- Global new unique DOIs: {prior.get('global_new_unique_dois','')} ",
+                  f"- Relation coverage: {prior.get('relation_type_counts',{})}",
+                  '', '### S3.1 global governance',
+                  f"- Status: **{d.get('status','unknown')}**",
+                  f"- Input rows: {d.get('input_total_rows','')} ",
+                  f"- Normalized unique DOIs: {d.get('all_normalized_unique_dois','')} ",
+                  f"- Canonical candidate pool: {d.get('canonical_candidate_pool','')} ",
+                  f"- Invalid DOI ratio: {d.get('invalid_doi_ratio','')} ",
+                  f"- Metadata status: {d.get('metadata_status_counts',{})}",
+                  f"- Integrity status: {d.get('integrity_status_counts',{})}",
+                  f"- Version groups: {d.get('exact_title_version_groups','')} ",
+                  f"- Alternate versions excluded: {d.get('alternate_versions_removed_from_canonical_pool','')} ",
+                  f"- Next: {d.get('next_stage','')}"
+              ]
+              Path('out/pr_comment.md').write_text('\n'.join(lines),encoding='utf-8')
+          PY
+      - name: Comment report on pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file out/pr_comment.md
+      - name: Upload S3.1 complete result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-S3-1-global-governance-final
+          path: out/
+          retention-days: 14
+      - name: Upload small S3.1 report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-S3-1-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+            out/pr_comment.md
+          retention-days: 14
