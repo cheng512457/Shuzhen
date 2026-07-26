@@ -1,0 +1,1 @@
+Reserved trigger marker for the B004 R02 30,000-record workflow. The executable trigger will be created on a dedicated pull-request branch.
