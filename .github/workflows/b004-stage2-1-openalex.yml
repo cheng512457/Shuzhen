@@ -1,8 +1,6 @@
 name: B004 S2.1 OpenAlex broad discovery
 
 on:
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 permissions:
