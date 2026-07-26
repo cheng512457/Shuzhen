@@ -48,7 +48,7 @@ jobs:
           repository: ${{ github.repository }}
           run-id: 30196709844
       - name: Run DOI normalization version merging and metadata governance
-        run: python scripts/b004_s3_1_global_governance_v3.py
+        run: python scripts/b004_s3_1_global_governance_v4.py
       - name: Build pull request report
         if: always() && github.event_name == 'pull_request'
         run: |
@@ -57,7 +57,12 @@ jobs:
           from pathlib import Path
           p=Path('out/run_summary.json')
           if not p.exists():
-              Path('out/pr_comment.md').write_text('S3.1 did not produce run_summary.json. Inspect workflow logs and checkpoints.',encoding='utf-8')
+              trace=Path('out/failure_traceback.txt')
+              body='S3.1 did not produce run_summary.json.'
+              if trace.exists():
+                  lines=trace.read_text(encoding='utf-8',errors='replace').splitlines()
+                  body += '\n\n```text\n' + '\n'.join(lines[-30:]) + '\n```'
+              Path('out/pr_comment.md').write_text(body,encoding='utf-8')
           else:
               d=json.loads(p.read_text(encoding='utf-8'))
               prior=d.get('prior_stage_summaries',{}).get('S2.3',{})
@@ -107,4 +112,5 @@ jobs:
             out/run_summary.json
             out/stage_report.md
             out/pr_comment.md
+            out/failure_traceback.txt
           retention-days: 14
