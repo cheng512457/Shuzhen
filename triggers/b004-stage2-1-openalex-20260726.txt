@@ -1,0 +1,1 @@
+Run the B004 S2.1 K01-K16 OpenAlex broad discovery workflow with 64 independent shards, checkpoint uploads, global DOI aggregation and quality gating.
