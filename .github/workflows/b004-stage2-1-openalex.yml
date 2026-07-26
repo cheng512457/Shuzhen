@@ -1,0 +1,66 @@
+name: B004 S2.1 OpenAlex broad discovery
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  SHARD_COUNT: "4"
+  PAGES_PER_QUERY: "8"
+
+jobs:
+  discover:
+    name: ${{ matrix.k_domain }} shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix:
+        k_domain: [K01,K02,K03,K04,K05,K06,K07,K08,K09,K10,K11,K12,K13,K14,K15,K16]
+        shard: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: python -m pip install --upgrade requests
+      - name: Discover OpenAlex records
+        env:
+          K_DOMAIN: ${{ matrix.k_domain }}
+          SHARD: ${{ matrix.shard }}
+        run: python b004/stage2_1_openalex_shard.py
+      - name: Upload shard checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-S2-1-${{ matrix.k_domain }}-shard${{ matrix.shard }}
+          path: out/
+          retention-days: 14
+
+  combine:
+    name: Combine and evaluate S2.1
+    needs: discover
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all shard checkpoints
+        uses: actions/download-artifact@v4
+        with:
+          pattern: B004-S2-1-*
+          path: stage2_1_artifacts
+          merge-multiple: false
+      - name: Combine, de-duplicate and apply quality gate
+        run: python b004/stage2_1_combine.py
+      - name: Upload S2.1 combined result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-S2-1-OpenAlex-final
+          path: out/
+          retention-days: 14
