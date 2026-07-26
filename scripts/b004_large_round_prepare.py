@@ -152,15 +152,9 @@ headers = front + [h for h in base_headers if h not in front]
 headers += ['link_http_status','link_audit_result','link_final_url','link_audit_note']
 headers = list(dict.fromkeys(headers))
 
-with (OUT/f'B004_{ROUND_CODE}_{BATCH_SIZE}_selected.csv').open('w', encoding='utf-8-sig', newline='') as f:
-    w = csv.DictWriter(f, fieldnames=headers)
-    w.writeheader(); w.writerows([{h:r.get(h,'') for h in headers} for r in selected])
-
-for i, bucket in enumerate(student_buckets, 1):
-    with (OUT/f'B004_{ROUND_CODE}_Student{i:02d}_{per_student}_pre_audit.csv').open('w', encoding='utf-8-sig', newline='') as f:
-        w = csv.DictWriter(f, fieldnames=headers)
-        w.writeheader(); w.writerows([{h:r.get(h,'') for h in headers} for r in bucket])
-
+# Keep one copy of every record in the shard files only. This makes every audit
+# runner download a much smaller preparation artifact while preserving complete
+# recoverability from the independent checkpoints.
 shard_count = BATCH_SIZE // SHARD_SIZE
 for shard in range(1, shard_count + 1):
     part = selected[(shard-1)*SHARD_SIZE:shard*SHARD_SIZE]
