@@ -1,0 +1,41 @@
+name: Publish B004 S2.3 summary
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/publish-b004-s2-3-summary-*.txt'
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download S2.3 summary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-S2-3-summary
+          path: summary
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30196709844
+      - name: Publish exact summary to pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo '## B004 S2.3 exact run summary'
+            echo
+            echo '```json'
+            cat summary/run_summary.json
+            echo '```'
+            echo
+            cat summary/stage_report.md
+          } > comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file comment.md
