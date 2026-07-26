@@ -1,0 +1,1 @@
+Retry S3.1 after diagnosing the first run. The retry uses a separate read connection during registry construction, commits 50,000-record checkpoints, fixes the 24-column registry insert, and preserves a traceback artifact if another failure occurs.
