@@ -1,0 +1,1 @@
+B006 E2 v2 reuses the completed 28,399-record metadata classification, independently rebuilds the 226,220-DOI exclusion registry, applies stricter record-level evidence verification, relegates unresolved records to C/D instead of counting them as supported, and runs a deterministic K-domain × relevance consistency audit before student-download release.
