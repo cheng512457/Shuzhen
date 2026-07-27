@@ -1,0 +1,136 @@
+name: B005 E2 metadata verification and relevance classification
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/run-b005-e2-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  prepare:
+    name: Split B005 E1 candidate pool
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download successful B005 E1 candidate artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B005-E1-new-candidates-final
+          path: prior_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30245108047
+      - name: Split 133363 candidates into 16 stable shards
+        run: python scripts/b005_e2_prepare.py
+      - name: Upload B005 E2 input shards
+        uses: actions/upload-artifact@v4
+        with:
+          name: B005-E2-input-shards
+          path: out/
+          retention-days: 14
+
+  classify:
+    name: Verify and classify shard ${{ matrix.shard }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: python -m pip install --upgrade requests
+      - name: Download B005 E2 inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: B005-E2-input-shards
+          path: input_artifact
+      - name: Verify metadata and assign K-domain relevance priority
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: python scripts/b005_e2_classify.py
+      - name: Upload classified shard checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B005-E2-shard${{ matrix.shard }}
+          path: out/
+          retention-days: 14
+
+  combine:
+    name: Combine B005 E2 classification
+    needs: classify
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download classified shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: B005-E2-shard*
+          path: shard_artifacts
+          merge-multiple: false
+      - name: Build formal download pool and apply quality gate
+        run: python scripts/b005_e2_combine.py
+      - name: Build pull request report
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('out/run_summary.json')
+          if not p.exists():
+              body='B005 E2 did not produce run_summary.json. Inspect shard checkpoints and logs.'
+          else:
+              d=json.loads(p.read_text(encoding='utf-8'))
+              body='\n'.join([
+                  '## B005 E2 automated report','',
+                  f"- Status: **{d.get('status','unknown')}**",
+                  f"- Classified rows: {d.get('classified_rows','')}",
+                  f"- Formal A/B download pool: {d.get('formal_download_pool','')}",
+                  f"- Relevance counts: {d.get('relevance_counts',{})}",
+                  f"- Priority counts: {d.get('priority_counts',{})}",
+                  f"- K01-K16 counts: {d.get('K_primary_counts',{})}",
+                  f"- Metadata verification: {d.get('metadata_counts',{})}",
+                  f"- Invalid DOI syntax: {d.get('invalid_doi','')}",
+                  f"- Next: {d.get('next_stage','')}"
+              ])
+          Path('out/pr_comment.md').write_text(body,encoding='utf-8')
+          PY
+      - name: Comment report on pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file out/pr_comment.md
+      - name: Upload B005 E2 complete result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B005-E2-metadata-relevance-final
+          path: out/
+          retention-days: 14
+      - name: Upload small B005 E2 report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B005-E2-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+            out/pr_comment.md
+          retention-days: 14
