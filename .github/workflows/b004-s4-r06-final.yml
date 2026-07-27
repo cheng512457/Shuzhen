@@ -1,0 +1,149 @@
+name: B004 R06 final remaining A-B download round
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['triggers/run-b004-r06-final-*.txt']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+  ROUND_CODE: R06
+  START_ID: '130001'
+  STUDENT_COUNT: '10'
+  SHARD_SIZE: '1000'
+
+jobs:
+  prepare:
+    name: Prepare all remaining A-B records
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: B004-S3-2-relevance-classification-final
+          path: formal_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30202262134
+      - uses: actions/download-artifact@v4
+        with:
+          name: B004-S4-1-first-10000-final
+          path: previous_artifacts/r01
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30203626164
+      - uses: actions/download-artifact@v4
+        with:
+          name: B004-R02-30000-final
+          path: previous_artifacts/r02
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30225455814
+      - uses: actions/download-artifact@v4
+        with:
+          name: B004-R03-30000-final
+          path: previous_artifacts/r03
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30227900079
+      - uses: actions/download-artifact@v4
+        with:
+          name: B004-R04-30000-final
+          path: previous_artifacts/r04
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30228841196
+      - uses: actions/download-artifact@v4
+        with:
+          name: B004-R05-30000-final
+          path: previous_artifacts/r05
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30230407916
+      - name: Select every remaining non-overlapping A-B DOI
+        run: python scripts/b004_final_round_prepare.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: B004-R06-final-prepared
+          path: out/
+          retention-days: 14
+
+  audit:
+    name: Audit final shard ${{ matrix.shard }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28]
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m pip install --upgrade requests
+      - uses: actions/download-artifact@v4
+        with:
+          name: B004-R06-final-prepared
+          path: input_artifact
+      - env:
+          SHARD: ${{ matrix.shard }}
+        run: python scripts/b004_final_round_audit.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-R06-audited-shard${{ matrix.shard }}
+          path: out/
+          retention-days: 14
+
+  combine:
+    name: Combine and freeze final B004 pool
+    needs: audit
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: B004-R06-final-prepared
+          path: prepared_artifact
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: B004-R06-audited-shard*
+          path: audit_artifacts
+          merge-multiple: false
+      - run: python scripts/b004_final_round_combine.py
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-R06-final-remaining-pool
+          path: out/
+          retention-days: 14
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-R06-final-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+          retention-days: 14
+      - name: Post exact R06 report
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = 'R06 did not produce run_summary.json. Inspect checkpoints.';
+            if (fs.existsSync('out/run_summary.json')) {
+              const s = JSON.parse(fs.readFileSync('out/run_summary.json','utf8'));
+              body = `## B004 R06 final remaining-pool report\n\n- Status: **${s.status}**\n- Records: ${s.records}\n- Unique DOIs: ${s.unique_dois}\n- IDs: ${s.id_start} to ${s.id_end}\n- Previous DOIs excluded: ${s.excluded_previous_unique_dois}\n- Student counts: ${JSON.stringify(s.student_counts)}\n- K counts: ${JSON.stringify(s.K_counts)}\n- Relevance: ${JSON.stringify(s.relevance_counts)}\n- Priority: ${JSON.stringify(s.priority_counts)}\n- Link audit: ${JSON.stringify(s.link_audit_counts)}\n- Next: ${s.next}`;
+            }
+            await github.rest.issues.createComment({owner:context.repo.owner,repo:context.repo.repo,issue_number:context.issue.number,body});
