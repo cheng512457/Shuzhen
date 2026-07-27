@@ -1,0 +1,1 @@
+Start B005-R01 using 30,000 A/B records from the successful E2 v2 pool, with hard exclusion of all 157,917 B004 DOI records, ten students, 30 audit shards and permanent IDs B005-000001 through B005-030000.
