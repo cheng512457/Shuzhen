@@ -1,0 +1,1 @@
+Start B004 R03 with 30,000 non-overlapping DOI records, excluding all R01 and R02 records, assigning permanent IDs B004-040001 through B004-070000, and auditing links in 30 independent 1,000-record shards.
