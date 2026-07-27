@@ -1,0 +1,1 @@
+Trigger B006 E2 metadata verification, conservative A/B/C relevance classification, stratified precision audit and formal download-pool freeze after successful B006 E1 v2.
