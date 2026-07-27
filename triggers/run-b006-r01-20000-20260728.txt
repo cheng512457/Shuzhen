@@ -1,0 +1,1 @@
+Trigger B006-R01: select the first 20,000 verified A/B records from the B006 E2 v2 formal pool, exclude all 226,220 B004+B005 DOI records, assign ten student tasks and audit DOI links.
