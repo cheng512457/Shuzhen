@@ -1,0 +1,126 @@
+name: B006 R02 final 803 verified non-overlapping student download round
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'triggers/run-b006-r02-final-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  prepare:
+    name: Prepare final 803 B006 A-B records
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download B006 E2 v2 verified formal pool
+        uses: actions/download-artifact@v4
+        with:
+          name: B006-E2-V2-verified-formal-pool
+          path: formal_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30295088444
+      - name: Download frozen B004+B005 cumulative database
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-B005-final-226220
+          path: prior_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30267324465
+      - name: Download B006 R01 database
+        uses: actions/download-artifact@v4
+        with:
+          name: B006-R01-20000-final
+          path: r01_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30295617290
+      - name: Select every remaining verified A-B DOI
+        run: python scripts/b006_r02_final_prepare.py
+      - name: Upload prepared final shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-R02-final-prepared
+          path: out/
+          retention-days: 14
+
+  audit:
+    name: Audit B006 R02 final 803 links
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m pip install --upgrade requests
+      - uses: actions/download-artifact@v4
+        with:
+          name: B006-R02-final-prepared
+          path: input_artifact
+      - name: Audit DOI links
+        run: python scripts/b006_r02_final_audit.py
+      - name: Upload audited checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-R02-audited-shard1
+          path: out/
+          retention-days: 14
+
+  combine:
+    name: Combine and freeze final B006 pool
+    needs: audit
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: B006-R02-final-prepared
+          path: prepared_artifact
+      - uses: actions/download-artifact@v4
+        with:
+          name: B006-R02-audited-shard1
+          path: audit_artifacts
+      - name: Merge and apply final quality gate
+        run: python scripts/b006_r02_final_combine.py
+      - name: Upload B006 R02 final result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-R02-final-803
+          path: out/
+          retention-days: 14
+      - name: Upload B006 R02 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-R02-final-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+          retention-days: 14
+      - name: Post exact R02 report
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = 'B006 R02 did not produce run_summary.json. Inspect checkpoints.';
+            if (fs.existsSync('out/run_summary.json')) {
+              const s = JSON.parse(fs.readFileSync('out/run_summary.json','utf8'));
+              body = `## B006 R02 final remaining-pool report\n\n- Status: **${s.status}**\n- Records: ${s.records}\n- Unique DOIs: ${s.unique_dois}\n- IDs: ${s.id_start} to ${s.id_end}\n- Previous unique DOIs excluded: ${s.excluded_previous_unique_dois}\n- Student counts: ${JSON.stringify(s.student_counts)}\n- K counts: ${JSON.stringify(s.K_counts)}\n- Relevance: ${JSON.stringify(s.relevance_counts)}\n- Priority: ${JSON.stringify(s.priority_counts)}\n- Link audit: ${JSON.stringify(s.link_audit_counts)}\n- Next: ${s.next}`;
+            }
+            await github.rest.issues.createComment({owner:context.repo.owner,repo:context.repo.repo,issue_number:context.issue.number,body});
