@@ -1,0 +1,145 @@
+name: B006 R01 20000 verified non-overlapping student download round
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/run-b006-r01-20000-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  prepare:
+    name: Select and assign B006 R01
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download B006 E2 v2 verified formal A-B pool
+        uses: actions/download-artifact@v4
+        with:
+          name: B006-E2-V2-verified-formal-pool
+          path: formal_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30295088444
+      - name: Download frozen B004+B005 cumulative database
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-B005-final-226220
+          path: prior_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30267324465
+      - name: Select balanced 20000 records with hard prior exclusion
+        run: python scripts/b006_r01_prepare.py
+      - name: Upload prepared audit shards
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-R01-20000-prepared
+          path: out/
+          retention-days: 14
+
+  audit:
+    name: Audit B006 R01 shard ${{ matrix.shard }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: python -m pip install --upgrade requests
+      - name: Download prepared shards
+        uses: actions/download-artifact@v4
+        with:
+          name: B006-R01-20000-prepared
+          path: input_artifact
+      - name: Audit DOI links
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: python scripts/b006_r01_audit.py
+      - name: Upload audited shard checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-R01-audited-shard${{ matrix.shard }}
+          path: out/
+          retention-days: 14
+
+  combine:
+    name: Combine B006 R01 20000 records
+    needs: audit
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download audited shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: B006-R01-audited-shard*
+          path: audit_artifacts
+          merge-multiple: false
+      - name: Merge and apply quality gate
+        run: python scripts/b006_r01_combine.py
+      - name: Build pull request report
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('out/run_summary.json')
+          if not p.exists():
+              body='B006 R01 did not produce run_summary.json. Inspect preparation and audit checkpoints.'
+          else:
+              d=json.loads(p.read_text(encoding='utf-8'))
+              body='\n'.join([
+                  '## B006 R01 20,000-record automated report','',
+                  f"- Status: **{d.get('status','unknown')}**",
+                  f"- Records: {d.get('records','')}",
+                  f"- Unique DOIs: {d.get('unique_dois','')}",
+                  f"- Permanent IDs: {d.get('id_start','')} to {d.get('id_end','')}",
+                  f"- Student counts: {d.get('student_counts',{})}",
+                  f"- K counts: {d.get('K_counts',{})}",
+                  f"- Relevance: {d.get('relevance_counts',{})}",
+                  f"- Priority: {d.get('priority_counts',{})}",
+                  f"- Link audit: {d.get('link_audit_counts',{})}",
+                  f"- Next: {d.get('next','')}"
+              ])
+          Path('out/pr_comment.md').write_text(body,encoding='utf-8')
+          PY
+      - name: Comment report on pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file out/pr_comment.md
+      - name: Upload B006 R01 final result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-R01-20000-final
+          path: out/
+          retention-days: 14
+      - name: Upload B006 R01 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-R01-20000-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+            out/pr_comment.md
+          retention-days: 14
