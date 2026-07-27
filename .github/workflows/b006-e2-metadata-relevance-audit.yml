@@ -1,0 +1,152 @@
+name: B006 E2 metadata relevance and stratified precision audit
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/run-b006-e2-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  prepare:
+    name: Split 28399 B006 E1 candidates and rebuild prior registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download successful B006 E1 v2 candidates
+        uses: actions/download-artifact@v4
+        with:
+          name: B006-E1-V2-high-precision-candidates
+          path: e1_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30280652747
+      - name: Download frozen B004+B005 cumulative database
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-B005-final-226220
+          path: prior_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30267324465
+      - name: Build 8 stable shards and exclusion registry
+        run: python scripts/b006_e2_prepare.py
+      - name: Upload B006 E2 inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-E2-inputs
+          path: out/
+          retention-days: 14
+
+  classify:
+    name: Verify and classify shard ${{ matrix.shard }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: python -m pip install --upgrade requests
+      - name: Download B006 E2 inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: B006-E2-inputs
+          path: input_artifact
+      - name: Crossref metadata verification and conservative classification
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: python scripts/b006_e2_classify.py
+      - name: Upload classified checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-E2-shard${{ matrix.shard }}
+          path: out/
+          retention-days: 14
+
+  combine:
+    name: Freeze B006 formal pool and run stratified audit
+    needs: classify
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download B006 E2 inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: B006-E2-inputs
+          path: input_artifact
+      - name: Download all classified checkpoints
+        uses: actions/download-artifact@v4
+        with:
+          pattern: B006-E2-shard*
+          path: shard_artifacts
+          merge-multiple: false
+      - name: Combine, audit and apply quality gate
+        run: python scripts/b006_e2_combine.py
+      - name: Build PR report
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('out/run_summary.json')
+          if not p.exists(): body='B006 E2 did not produce run_summary.json. Inspect checkpoints.'
+          else:
+              d=json.loads(p.read_text(encoding='utf-8'))
+              body='\n'.join([
+                '## B006 E2 automated report','',
+                f"- Status: **{d.get('status','unknown')}**",
+                f"- Classified rows: {d.get('classified_rows','')}",
+                f"- Formal A/B download pool: {d.get('formal_AB_download_pool','')}",
+                f"- Relevance: {d.get('relevance_counts',{})}",
+                f"- Priority: {d.get('priority_counts',{})}",
+                f"- K domains: {d.get('primary_K_counts',{})}",
+                f"- Metadata: {d.get('metadata_status_counts',{})}",
+                f"- Invalid DOI: {d.get('invalid_doi','')}",
+                f"- Prior overlap: {d.get('prior_overlap','')}",
+                f"- Stratified audit: {d.get('audit_status_counts',{})}; supported share {d.get('audit_supported_share','')}",
+                f"- Quality gate: {d.get('quality_gate',{})}",
+                f"- Next: {d.get('next_stage','')}"
+              ])
+          Path('out/pr_comment.md').write_text(body,encoding='utf-8')
+          PY
+      - name: Comment report on pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file out/pr_comment.md
+      - name: Upload B006 E2 full result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-E2-formal-pool
+          path: out/
+          retention-days: 14
+      - name: Upload B006 E2 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-E2-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+            out/pr_comment.md
+            out/B006_E2_stratified_precision_audit.csv
+          retention-days: 14
