@@ -1,0 +1,92 @@
+name: B005 E2 v2 controlled-prior relevance retry
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/run-b005-e2-v2-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  reclassify:
+    name: Reclassify 133363 B005 candidates with controlled priors
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download failed E2 complete classified pool
+        uses: actions/download-artifact@v4
+        with:
+          name: B005-E2-metadata-relevance-final
+          path: e2_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30248280850
+      - name: Download frozen B004 cumulative database
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-R01-R06-final-157917
+          path: b004_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30235646236
+      - name: Reclassify using title evidence, morphology and controlled K-domain priors
+        run: python scripts/b005_e2_reclassify_v2.py
+      - name: Build pull request report
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('out/run_summary.json')
+          if not p.exists():
+              body='B005 E2 v2 did not produce run_summary.json. Inspect the reclassification log.'
+          else:
+              d=json.loads(p.read_text(encoding='utf-8'))
+              body='\n'.join([
+                  '## B005 E2 v2 automated report','',
+                  f"- Status: **{d.get('status','unknown')}**",
+                  f"- Classified rows: {d.get('classified_rows','')}",
+                  f"- Formal A/B download pool: {d.get('formal_AB_download_pool','')}",
+                  f"- Relevance counts: {d.get('relevance_counts',{})}",
+                  f"- Priority counts: {d.get('priority_counts',{})}",
+                  f"- K01-K16 counts: {d.get('K_primary_counts',{})}",
+                  f"- Metadata verification: {d.get('metadata_counts',{})}",
+                  f"- Invalid DOI syntax: {d.get('invalid_doi','')}",
+                  f"- B004 overlap: {d.get('B004_overlap','')}",
+                  f"- Missing author/year/journal: {d.get('missing_first_author','')}/{d.get('missing_year','')}/{d.get('missing_journal','')}",
+                  f"- Next: {d.get('next_stage','')}"
+              ])
+          Path('out/pr_comment.md').write_text(body,encoding='utf-8')
+          PY
+      - name: Comment report on pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file out/pr_comment.md
+      - name: Upload B005 E2 v2 complete result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B005-E2-v2-reclassification-final
+          path: out/
+          retention-days: 14
+      - name: Upload B005 E2 v2 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B005-E2-v2-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+            out/pr_comment.md
+          retention-days: 14
