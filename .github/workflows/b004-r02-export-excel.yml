@@ -1,0 +1,75 @@
+name: B004 R02 export ten 3000-record Excel workbooks
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/run-b004-r02-excel-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  export:
+    name: Build ten R02 artifact_tool Excel files
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download successful R02 final artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-R02-30000-final
+          path: input_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30225455814
+      - name: Install artifact_tool
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install artifact-tool || python -m pip install artifact_tool
+          python - <<'PY'
+          from artifact_tool import Workbook, SpreadsheetFile
+          print('artifact_tool import successful')
+          PY
+      - name: Generate ten formatted 3000-record Excel workbooks
+        run: python scripts/b004_r02_export_excel_artifact_tool.py
+      - name: Upload complete R02 Excel delivery package
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-R02-30000-ten-student-Excel-package
+          path: out_excel/
+          retention-days: 14
+      - name: Build pull request report
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          p=Path('out_excel/B004_R02_Excel生成与核验报告.json')
+          if p.exists():
+              d=json.loads(p.read_text(encoding='utf-8'))
+              body='\n'.join([
+                  '## B004 R02 Excel export report','',
+                  '- Status: **success**',
+                  f"- Excel workbooks: {len(d.get('files',[]))}",
+                  f"- ZIP: {d.get('zip','')}",
+                  f"- Student validation: {d.get('excel_validation',{})}",
+                  '- Next: Start B004 R03 30,000-record non-overlapping download round',
+              ])
+          else:
+              body='B004 R02 Excel export failed before producing the validation report. Inspect workflow logs and retry the same stage.'
+          Path('excel_export_comment.md').write_text(body,encoding='utf-8')
+          PY
+      - name: Comment report on pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file excel_export_comment.md
