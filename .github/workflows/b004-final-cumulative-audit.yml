@@ -1,0 +1,107 @@
+name: B004 final cumulative DOI audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['triggers/run-b004-final-cumulative-audit-*.txt']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download R01 final artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-S4-1-first-10000-final
+          path: round_artifacts/R01
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30203626164
+
+      - name: Download R02 final artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-R02-30000-final
+          path: round_artifacts/R02
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30225455814
+
+      - name: Download R03 final artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-R03-30000-final
+          path: round_artifacts/R03
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30227900079
+
+      - name: Download R04 final artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-R04-30000-final
+          path: round_artifacts/R04
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30228841196
+
+      - name: Download R05 final artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-R05-30000-final
+          path: round_artifacts/R05
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30230407916
+
+      - name: Download R06 final artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-R06-final-remaining-pool
+          path: round_artifacts/R06
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30232892046
+
+      - name: Run R01-R06 global DOI and ID audit
+        run: python scripts/b004_final_cumulative_audit.py
+
+      - name: Upload full cumulative database and audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-R01-R06-final-157917
+          path: out/
+          retention-days: 14
+
+      - name: Publish exact cumulative audit on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body;
+            if (fs.existsSync('out/B004_R01_R06_final_cumulative_audit.md')) {
+              body = fs.readFileSync('out/B004_R01_R06_final_cumulative_audit.md', 'utf8');
+            } else {
+              body = 'B004 final cumulative audit failed before producing the report. Inspect workflow logs.';
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
