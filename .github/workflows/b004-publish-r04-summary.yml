@@ -1,0 +1,41 @@
+name: Publish B004 R04 exact summary
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['triggers/publish-b004-r04-summary-*.txt']
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: B004-R04-30000-summary
+          path: r04_summary
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30228841196
+      - name: Publish exact JSON summary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo '## B004 R04 exact summary' > comment.md
+          echo '```json' >> comment.md
+          cat r04_summary/run_summary.json >> comment.md
+          echo '```' >> comment.md
+          gh api repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments -f body="$(cat comment.md)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: B004-R04-published-summary
+          path: r04_summary/
+          retention-days: 14
