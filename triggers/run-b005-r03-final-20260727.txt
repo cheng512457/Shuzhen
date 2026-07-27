@@ -1,0 +1,1 @@
+Start B005-R03: select and audit every remaining A/B DOI after excluding B004, B005-R01 and B005-R02, assign B005-060001 through B005-068303, and freeze the complete B005 formal download pool.
