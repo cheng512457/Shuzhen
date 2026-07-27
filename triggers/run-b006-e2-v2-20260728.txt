@@ -1,0 +1,1 @@
+Re-run B006 E2 using record-level evidence verification and a stratified consistency audit. Reuse completed metadata, preserve zero overlap with B004+B005, and do not lower relevance rules.
