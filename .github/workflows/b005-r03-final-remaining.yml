@@ -1,0 +1,142 @@
+name: B005 R03 final 8303 non-overlapping student download round
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'triggers/run-b005-r03-final-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  prepare:
+    name: Prepare all remaining B005 A-B records
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download B005 E2 v2 formal A-B pool
+        uses: actions/download-artifact@v4
+        with:
+          name: B005-E2-v2-reclassification-final
+          path: formal_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30252821536
+      - name: Download frozen B004 cumulative database
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-R01-R06-final-157917
+          path: b004_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30235646236
+      - name: Download B005 R01 database
+        uses: actions/download-artifact@v4
+        with:
+          name: B005-R01-30000-final
+          path: r01_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30257276884
+      - name: Download B005 R02 database
+        uses: actions/download-artifact@v4
+        with:
+          name: B005-R02-30000-final
+          path: r02_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30261661786
+      - name: Select every remaining non-overlapping A-B DOI
+        run: python scripts/b005_r03_final_prepare.py
+      - name: Upload prepared final shards
+        uses: actions/upload-artifact@v4
+        with:
+          name: B005-R03-final-prepared
+          path: out/
+          retention-days: 14
+
+  audit:
+    name: Audit B005 R03 shard ${{ matrix.shard }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      max-parallel: 9
+      matrix:
+        shard: [1,2,3,4,5,6,7,8,9]
+    steps:
+      - uses: actions/checkout@v4
+      - run: python -m pip install --upgrade requests
+      - uses: actions/download-artifact@v4
+        with:
+          name: B005-R03-final-prepared
+          path: input_artifact
+      - name: Audit DOI links
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: python scripts/b005_r03_final_audit.py
+      - name: Upload audited shard checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B005-R03-audited-shard${{ matrix.shard }}
+          path: out/
+          retention-days: 14
+
+  combine:
+    name: Combine and freeze final B005 pool
+    needs: audit
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: B005-R03-final-prepared
+          path: prepared_artifact
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: B005-R03-audited-shard*
+          path: audit_artifacts
+          merge-multiple: false
+      - name: Merge and apply final quality gate
+        run: python scripts/b005_r03_final_combine.py
+      - name: Upload B005 R03 final result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B005-R03-final-8303
+          path: out/
+          retention-days: 14
+      - name: Upload B005 R03 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B005-R03-final-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+          retention-days: 14
+      - name: Post exact R03 report
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = 'B005 R03 did not produce run_summary.json. Inspect checkpoints.';
+            if (fs.existsSync('out/run_summary.json')) {
+              const s = JSON.parse(fs.readFileSync('out/run_summary.json','utf8'));
+              body = `## B005 R03 final remaining-pool report\n\n- Status: **${s.status}**\n- Records: ${s.records}\n- Unique DOIs: ${s.unique_dois}\n- IDs: ${s.id_start} to ${s.id_end}\n- Previous unique DOIs excluded: ${s.excluded_previous_unique_dois}\n- Student counts: ${JSON.stringify(s.student_counts)}\n- K counts: ${JSON.stringify(s.K_counts)}\n- Relevance: ${JSON.stringify(s.relevance_counts)}\n- Priority: ${JSON.stringify(s.priority_counts)}\n- Link audit: ${JSON.stringify(s.link_audit_counts)}\n- Next: ${s.next}`;
+            }
+            await github.rest.issues.createComment({owner:context.repo.owner,repo:context.repo.repo,issue_number:context.issue.number,body});
