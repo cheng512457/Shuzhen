@@ -1,0 +1,1 @@
+Start B005-R02 using the remaining A/B pool after hard exclusion of the complete B004 database and all 30,000 B005-R01 DOI records.
