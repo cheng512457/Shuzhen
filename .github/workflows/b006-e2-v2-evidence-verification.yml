@@ -1,0 +1,94 @@
+name: B006 E2 v2 record-level evidence verification
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/run-b006-e2-v2-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  verify:
+    name: Reverify B006 E2 formal pool without lowering relevance rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download completed B006 E2 classified result
+        uses: actions/download-artifact@v4
+        with:
+          name: B006-E2-formal-pool
+          path: prior_e2_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30290364356
+      - name: Download frozen B004+B005 cumulative database
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-B005-final-226220
+          path: prior_database_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30267324465
+      - name: Apply record-level independent evidence verification and stratified consistency audit
+        run: python scripts/b006_e2_v2_verify.py
+      - name: Build PR report
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('out/run_summary.json')
+          if not p.exists():
+              body='B006 E2 v2 did not produce run_summary.json. Inspect the verification log.'
+          else:
+              d=json.loads(p.read_text(encoding='utf-8'))
+              body='\n'.join([
+                '## B006 E2 v2 automated report','',
+                f"- Status: **{d.get('status','unknown')}**",
+                f"- Classified rows: {d.get('classified_rows','')}",
+                f"- Verified formal A/B pool: {d.get('formal_AB_download_pool','')}",
+                f"- Relevance: {d.get('relevance_counts',{})}",
+                f"- Priority: {d.get('priority_counts',{})}",
+                f"- Formal K domains: {d.get('formal_K_counts',{})}",
+                f"- Metadata: {d.get('metadata_status_counts',{})}",
+                f"- Invalid DOI: {d.get('invalid_doi','')}",
+                f"- Prior registry/overlap: {d.get('prior_registry_dois','')}/{d.get('prior_overlap','')}",
+                f"- Stratified audit: {d.get('audit_status_counts',{})}; supported share {d.get('audit_supported_share','')}",
+                f"- Quality gate: {d.get('quality_gate',{})}",
+                f"- Next: {d.get('next_stage','')}"
+              ])
+          Path('out/pr_comment.md').write_text(body,encoding='utf-8')
+          PY
+      - name: Comment report on pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file out/pr_comment.md
+      - name: Upload B006 E2 v2 complete result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-E2-V2-verified-formal-pool
+          path: out/
+          retention-days: 14
+      - name: Upload B006 E2 v2 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B006-E2-V2-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+            out/pr_comment.md
+            out/B006_E2_V2_stratified_precision_audit.csv
+          retention-days: 14
