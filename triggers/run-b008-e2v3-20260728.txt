@@ -1,0 +1,1 @@
+Retry B008 E2 using explicit peptide-design lexical evidence, preserve all global A/B relevance decisions, repair K11 primary coverage only with strict existing-A/B reassignment or exceptional evidence-backed C-to-B rescue, and block student release until every original quality gate passes.
