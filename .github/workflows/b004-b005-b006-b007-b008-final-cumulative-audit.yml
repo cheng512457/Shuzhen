@@ -1,0 +1,92 @@
+name: B004 B005 B006 B007 B008 final cumulative DOI audit
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/run-b004-b005-b006-b007-b008-final-audit-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download frozen B004+B005+B006+B007 database
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-B005-B006-B007-final-266798
+          path: artifacts/prior
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30327827563
+      - name: Download B008 R01 final package
+        uses: actions/download-artifact@v4
+        with:
+          name: B008-R01-final-18406
+          path: artifacts/b008_r01
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30353790890
+      - name: Run cumulative DOI audit
+        run: python scripts/b004_b005_b006_b007_b008_final_cumulative_audit.py
+      - name: Build PR report
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('out/run_summary.json')
+          if not p.exists():
+              body='B004-B008 audit did not produce run_summary.json.'
+          else:
+              d=json.loads(p.read_text(encoding='utf-8'))
+              body='\n'.join([
+                '## B004 + B005 + B006 + B007 + B008 final cumulative audit','',
+                f"- Status: **{d.get('status','unknown')}**",
+                f"- Total records: {d.get('total_records','')}",
+                f"- Total unique DOIs: {d.get('total_unique_dois','')}",
+                f"- Total unique permanent IDs: {d.get('total_unique_permanent_ids','')}",
+                f"- Prior records: {d.get('prior_records','')}",
+                f"- B008 records: {d.get('B008_records','')}",
+                f"- Prior-B008 DOI overlap: {d.get('prior_B008_overlap','')}",
+                f"- B008 relevance: {d.get('B008_relevance_counts',{})}",
+                f"- B008 priority: {d.get('B008_priority_counts',{})}",
+                f"- B008 link audit: {d.get('B008_link_audit_counts',{})}",
+                f"- Quality gate: {d.get('quality_gate',{})}",
+                f"- Next: {d.get('next','')}"
+              ])
+          Path('out/pr_comment.md').write_text(body,encoding='utf-8')
+          PY
+      - name: Comment on pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file out/pr_comment.md
+      - name: Upload complete cumulative package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-B005-B006-B007-B008-final-285204
+          path: out/
+          retention-days: 14
+      - name: Upload summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B004-B005-B006-B007-B008-final-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+            out/pr_comment.md
+          retention-days: 14
