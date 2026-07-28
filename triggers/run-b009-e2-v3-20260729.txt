@@ -1,0 +1,1 @@
+Retry B009 E2 using reconstructed title, abstract, query, multi-domain and independent-source evidence. Preserve all original quality gates and do not relax topical relevance.
