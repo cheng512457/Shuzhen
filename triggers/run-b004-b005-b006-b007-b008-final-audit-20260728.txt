@@ -1,0 +1,1 @@
+Run the cumulative DOI audit after successful B008-R01 completion. Verify 285,204 total records, 285,204 unique DOIs, zero overlap between the prior 266,798 records and B008's 18,406 records, continuous B008 IDs, and A/B-only inclusion.
