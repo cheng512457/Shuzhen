@@ -1,0 +1,144 @@
+name: B008 E1 deeper stratified high-precision expansion
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/run-b008-e1-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  prepare:
+    name: Build 266798 DOI registry and balanced seeds
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download frozen B004+B005+B006+B007 cumulative database
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-B005-B006-B007-final-266798
+          path: prior_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30327827563
+      - name: Build exclusion registry and K01-K16 seed files
+        run: python scripts/b008_e1_prepare.py
+      - name: Upload B008 preparation package
+        uses: actions/upload-artifact@v4
+        with:
+          name: B008-E1-prepare
+          path: out/
+          retention-days: 14
+
+  discover:
+    name: B008 ${{ matrix.k }} ${{ matrix.strategy }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 270
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        k: [K01,K02,K03,K04,K05,K06,K07,K08,K09,K10,K11,K12,K13,K14,K15,K16]
+        strategy: [precision,frontier,network]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: python -m pip install --upgrade requests
+      - name: Download registry and seeds
+        uses: actions/download-artifact@v4
+        with:
+          name: B008-E1-prepare
+          path: prepare_artifact
+      - name: Run deeper stratified and expanded-network discovery
+        env:
+          K_DOMAIN: ${{ matrix.k }}
+          STRATEGY: ${{ matrix.strategy }}
+        run: python scripts/b008_e1_discover.py
+      - name: Upload B008 shard checkpoint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B008-E1-${{ matrix.k }}-${{ matrix.strategy }}
+          path: out/
+          retention-days: 14
+
+  combine:
+    name: Combine B008 E1 candidates
+    needs: discover
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download preparation registry
+        uses: actions/download-artifact@v4
+        with:
+          name: B008-E1-prepare
+          path: prepare_artifact
+      - name: Download all B008 checkpoints
+        uses: actions/download-artifact@v4
+        with:
+          pattern: B008-E1-K*-*
+          path: shard_artifacts
+          merge-multiple: false
+      - name: Globally de-duplicate and apply quality gate
+        run: python scripts/b008_e1_combine.py
+      - name: Build PR report
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('out/run_summary.json')
+          if not p.exists():
+              body='B008 E1 did not produce run_summary.json. Inspect saved checkpoints.'
+          else:
+              d=json.loads(p.read_text(encoding='utf-8'))
+              body='\n'.join([
+                  '## B008 E1 automated report','',
+                  f"- Status: **{d.get('status','unknown')}**",
+                  f"- Prior DOI registry: {d.get('prior_registry_dois','')}",
+                  f"- New unique DOI candidates: {d.get('new_global_unique_dois','')}",
+                  f"- HP-A + HP-B candidates: {d.get('HP_A_B_candidates','')}",
+                  f"- Prior overlap: {d.get('overlap_with_B004_B005_B006_B007','')}",
+                  f"- Candidate tiers: {d.get('candidate_tier_counts',{})}",
+                  f"- K memberships: {d.get('K_membership_counts',{})}",
+                  f"- Strategies: {d.get('strategy_membership_counts',{})}",
+                  f"- Quality gate: {d.get('quality_gate',{})}",
+                  f"- Next: {d.get('next_stage','')}"
+              ])
+          Path('out/pr_comment.md').write_text(body,encoding='utf-8')
+          PY
+      - name: Comment on pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file out/pr_comment.md
+      - name: Upload B008 full candidate pool
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B008-E1-high-precision-candidates
+          path: out/
+          retention-days: 14
+      - name: Upload B008 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B008-E1-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+            out/pr_comment.md
+          retention-days: 14
