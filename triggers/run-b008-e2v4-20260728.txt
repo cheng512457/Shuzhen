@@ -1,0 +1,1 @@
+Retry B008 E2 v4. Preserve every global relevance decision and all original quality gates. Complete K11 primary-domain coverage only through one additional record with explicit peptide-design title evidence, expanded food or bioactivity context, adequate precision score and focused supported audit. Do not start student download unless every gate passes.
