@@ -1,0 +1,91 @@
+name: B008 E2 v4 strict K11 context verification
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/run-b008-e2v4-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  verify:
+    name: Reverify B008 E2 with one-record K11 evidence completion
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download B008 E2 v3 verified pool
+        uses: actions/download-artifact@v4
+        with:
+          name: B008-E2-V3-verified-formal-pool
+          path: v3_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30349207620
+      - name: Download frozen 266798-record prior database
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-B005-B006-B007-final-266798
+          path: prior_database_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30327827563
+      - name: Apply strict K11 context repair and all quality gates
+        run: python scripts/b008_e2_v4_k11_context_verify.py
+      - name: Build PR report
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('out/run_summary.json')
+          if not p.exists():
+              body='B008 E2 v4 did not produce run_summary.json. Inspect the job log.'
+          else:
+              d=json.loads(p.read_text(encoding='utf-8'))
+              body='\n'.join([
+                  '## B008 E2 v4 automated report','',
+                  f"- Status: **{d.get('status','unknown')}**",
+                  f"- Classified rows: {d.get('classified_rows','')}",
+                  f"- Verified formal A/B pool: {d.get('formal_AB_download_pool','')}",
+                  f"- Relevance: {d.get('relevance_counts',{})}",
+                  f"- Priority: {d.get('priority_counts',{})}",
+                  f"- Formal K domains: {d.get('formal_K_counts',{})}",
+                  f"- Metadata: {d.get('metadata_status_counts',{})}",
+                  f"- Invalid DOI: {d.get('invalid_doi','')}",
+                  f"- Prior registry/overlap: {d.get('prior_registry_dois','')}/{d.get('prior_overlap','')}",
+                  f"- K11 V3/reassigned/promoted: {d.get('previous_v3_K11_formal','')}/{d.get('K11_v4_strict_reassigned_existing_AB','')}/{d.get('K11_v4_strict_promoted_from_C','')}",
+                  f"- Precision audit: {d.get('audit_status_counts',{})}; supported share {d.get('audit_supported_share','')}",
+                  f"- Quality gate: {d.get('quality_gate',{})}",
+                  f"- Next: {d.get('next_stage','')}"
+              ])
+          Path('out/pr_comment.md').write_text(body,encoding='utf-8')
+          PY
+      - name: Comment on pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file out/pr_comment.md
+      - name: Upload B008 E2 v4 verified formal pool
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B008-E2-V4-verified-formal-pool
+          path: out/
+          retention-days: 14
+      - name: Upload B008 E2 v4 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B008-E2-V4-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+            out/pr_comment.md
+          retention-days: 14
