@@ -1,0 +1,1 @@
+Start B008 E2 after successful B008 E1. Verify metadata, apply conservative A/B/C/D classification, perform record-level evidence corroboration and stratified precision audit, preserve zero overlap with the frozen 266,798-DOI prior database, and freeze only verified A/B records.
