@@ -1,0 +1,1 @@
+Start B008 R01 with all 18,406 verified A/B records. Exclude the frozen 266,798 prior DOIs, assign B008-000001 through B008-018406 across ten students, audit DOI links in 19 shards, and block delivery on duplicates, overlap, non-A/B records, ID errors or excessive invalid links.
