@@ -1,0 +1,1 @@
+Trigger the final cumulative DOI and permanent-ID audit for B004, B005 and B006 after successful B006-R02 completion.
