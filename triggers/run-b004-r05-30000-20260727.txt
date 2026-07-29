@@ -1,0 +1,1 @@
+Start B004 R05 with 30,000 DOI records excluding all R01, R02, R03 and R04 DOI values, permanent IDs B004-100001 through B004-130000, ten students with 3,000 records each, and full DOI-link audit.
