@@ -1,0 +1,95 @@
+name: B009 E2 v3 semantic ensemble rescue
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'triggers/run-b009-e2-v3-*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  verify:
+    name: Reverify B009 with semantic-ensemble evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download B009 E2 v2 result
+        uses: actions/download-artifact@v4
+        with:
+          name: B009-E2-V2-verified-formal-pool
+          path: v2_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30408420364
+      - name: Download frozen B004+B005+B006+B007+B008 cumulative database
+        uses: actions/download-artifact@v4
+        with:
+          name: B004-B005-B006-B007-B008-final-285204
+          path: prior_database_artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 30358602383
+      - name: Apply semantic-ensemble evidence rescue and combined audit
+        run: python scripts/b009_e2_v3_semantic_ensemble_rescue.py
+      - name: Build PR report
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('out/run_summary.json')
+          if not p.exists():
+              body='B009 E2 v3 did not produce run_summary.json. Inspect the workflow log and source artifacts.'
+          else:
+              d=json.loads(p.read_text(encoding='utf-8'))
+              body='\n'.join([
+                  '## B009 E2 v3 automated report','',
+                  f"- Status: **{d.get('status','unknown')}**",
+                  f"- Classified rows: {d.get('classified_rows','')}",
+                  f"- Verified formal A/B pool: {d.get('formal_AB_download_pool','')}",
+                  f"- Relevance: {d.get('relevance_counts',{})}",
+                  f"- Priority: {d.get('priority_counts',{})}",
+                  f"- Formal K domains: {d.get('formal_K_counts',{})}",
+                  f"- Metadata: {d.get('metadata_status_counts',{})}",
+                  f"- Invalid DOI: {d.get('invalid_doi','')}",
+                  f"- Prior registry/overlap: {d.get('prior_registry_dois','')}/{d.get('prior_overlap','')}",
+                  f"- K11 A/B reassigned: {d.get('K11_reassigned_AB',0)}; K11 C-to-B: {d.get('K11_promoted_C_to_B',0)}",
+                  f"- General strict C-to-B: {d.get('general_promoted_C_to_B',0)}",
+                  f"- Combined precision audit: {d.get('audit_status_counts',{})}; supported share {d.get('audit_supported_share','')}",
+                  f"- Quality gate: {d.get('quality_gate',{})}",
+                  f"- Next: {d.get('next_stage','')}"
+              ])
+          Path('out/pr_comment.md').write_text(body,encoding='utf-8')
+          PY
+      - name: Comment report on pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file out/pr_comment.md
+      - name: Upload B009 E2 v3 complete result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B009-E2-V3-verified-formal-pool
+          path: out/
+          retention-days: 14
+      - name: Upload B009 E2 v3 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: B009-E2-V3-summary
+          path: |
+            out/run_summary.json
+            out/stage_report.md
+            out/pr_comment.md
+          retention-days: 14
