@@ -1,0 +1,1 @@
+Trigger S3.2 after successful S3.1. Classify the 434,808-record canonical candidate pool by K01-K16, assign A/B/C/D relevance, G-group mapping and P0-P3 download priority, and freeze the formal downloadable literature pool.
