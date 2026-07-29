@@ -1,0 +1,1 @@
+Trigger the first B004 10,000-record student download round after successful S3.2 classification. Select balanced K01-K16 records, assign B004-000001 to B004-010000, audit DOI links, split into ten 1,000-record student tasks, and preserve audited CSV outputs for final Excel conversion.
