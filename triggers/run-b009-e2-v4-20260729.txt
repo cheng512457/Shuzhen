@@ -1,0 +1,1 @@
+Run B009 E2 v4 using the completed V3 artifact, restore the pre-adjustment baseline, rebuild strict lexical-semantic evidence, audit every adjustment against an immutable pre-adjustment evidence ledger, preserve the 12,000-record and K01-K16 minimum-100 gates, and do not start R01 unless all gates pass.
