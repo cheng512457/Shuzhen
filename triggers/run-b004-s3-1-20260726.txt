@@ -1,0 +1,1 @@
+Trigger S3.1 after successful S2.3: merge S2.1-S2.3, normalize DOI, consolidate cross-source metadata, identify version relations, quarantine integrity records, and freeze the canonical candidate pool.
