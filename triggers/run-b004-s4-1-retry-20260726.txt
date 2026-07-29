@@ -1,0 +1,1 @@
+Retry S4.1 after correcting the K01-K16 quota sum from 10,050 to exactly 10,000. The retry will select and assign 10,000 unique DOI records, audit ten 1,000-record student shards, and apply the final quality gate before Excel generation.
