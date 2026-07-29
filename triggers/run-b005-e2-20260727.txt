@@ -1,0 +1,1 @@
+Trigger B005 E2 metadata verification, DOI syntax validation, K01-K16 classification, A/B/C/D relevance grading and P0-P3 download prioritization for the 133,363 B005 E1 candidates.
